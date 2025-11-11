@@ -1,0 +1,66 @@
+version: '3.9'
+
+services:
+  # Backend (Go Fiber)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: record-meet-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - FIBER_PORT=3001
+      - NEXT_JS_URL=http://localhost:3000
+      - LOG_LEVEL=debug
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./backend:/app/backend
+    networks:
+      - record-meet-net
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      target: development
+    container_name: record-meet-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - NEXT_PUBLIC_WS_URL=ws://localhost:3001
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+      - /app/frontend/.next
+    networks:
+      - record-meet-net
+    depends_on:
+      - backend
+
+  # Redis (optional, for room state)
+  redis:
+    image: redis:7-alpine
+    container_name: record-meet-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - record-meet-net
+    volumes:
+      - redis-data:/data
+
+networks:
+  record-meet-net:
+    driver: bridge
+
+volumes:
+  redis-data:

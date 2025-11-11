@@ -1,0 +1,260 @@
+# Record Meet Backend (Go Fiber)
+
+This is the signaling server for Record Meet, a Google Meet clone built with Next.js + Go.
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Go 1.21+
+- Make (optional, for commands)
+
+### Installation
+
+```bash
+# Download dependencies
+go mod download
+go mod tidy
+
+# Run the server
+go run cmd/server/main.go
+```
+
+Server will start on `http://localhost:3001`
+
+### Environment Setup
+
+Create `.env.local` file:
+```env
+FIBER_PORT=3001
+NEXT_JS_URL=http://localhost:3000
+LOG_LEVEL=debug
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=your-secret-key-change-in-production
+TURN_SERVER=your-turn-server.com
+STUN_SERVERS=stun:stun.l.google.com:19302
+ENVIRONMENT=development
+```
+
+## 📁 Project Structure
+
+```
+backend/
+├── cmd/server/              # Entry point
+│   └── main.go             # Application start
+├── handlers/               # HTTP & WebSocket handlers
+│   └── websocket.go        # WebSocket signaling logic
+├── models/                 # Data structures
+│   └── room.go            # Room & Peer models
+├── services/              # Business logic
+│   └── room_service.go    # Room management
+├── config/                # Configuration
+│   └── config.go          # Config loader
+├── utils/                 # Utilities
+│   └── constants.go       # Constants & types
+├── go.mod                 # Dependencies
+└── README.md              # This file
+```
+
+## 🔌 API Endpoints
+
+### Health Check
+```bash
+GET http://localhost:3001/health
+```
+
+Response:
+```json
+{
+  "status": "ok",
+  "time": "2025-01-15T10:30:00Z"
+}
+```
+
+### WebSocket (Signaling)
+```
+WS ws://localhost:3001/ws/:room/:peerId
+```
+
+## 📡 Message Format
+
+All WebSocket messages are JSON:
+
+```json
+{
+  "type": "offer|answer|ice|chat|new-peer|peer-left",
+  "room": "room-id",
+  "from": "peer-id",
+  "to": "target-peer-id",
+  "data": {}
+}
+```
+
+## 🔄 Phase 1: Signaling Flow
+
+1. **Peer A connects** → `ws://localhost:3001/ws/room-1/peer-a`
+   - Server broadcasts: `{ type: "new-peer", from: "server", data: "peer-a" }`
+
+2. **Peer B connects** → `ws://localhost:3001/ws/room-1/peer-b`
+   - Server broadcasts: `{ type: "new-peer", data: "peer-b" }` to peer A
+   - Peer A receives: List of existing peers [peer-a, peer-b]
+
+3. **Peer A creates offer**
+   ```json
+   {
+     "type": "offer",
+     "from": "peer-a",
+     "to": "peer-b",
+     "data": { "sdp": "..." }
+   }
+   ```
+   - Server relays to peer B
+
+4. **Peer B sends answer**
+   ```json
+   {
+     "type": "answer",
+     "from": "peer-b",
+     "to": "peer-a",
+     "data": { "sdp": "..." }
+   }
+   ```
+   - Server relays to peer A
+
+5. **Exchange ICE candidates** (both directions)
+   ```json
+   {
+     "type": "ice",
+     "from": "peer-a",
+     "to": "peer-b",
+     "data": { "candidate": "..." }
+   }
+   ```
+
+6. **P2P Connection Established** ✅
+   - Media flows directly between peers
+   - Server role complete for this call
+
+## 🧪 Testing
+
+### Test Health Endpoint
+```bash
+curl http://localhost:3001/health
+```
+
+### Test WebSocket with wscat
+```bash
+# Install wscat (npm install -g wscat)
+
+# Terminal 1: Peer A
+wscat -c "ws://localhost:3001/ws/test-room/peer-1"
+
+# Terminal 2: Peer B
+wscat -c "ws://localhost:3001/ws/test-room/peer-2"
+
+# In Terminal 1, send offer
+> {"type":"offer","from":"peer-1","to":"peer-2","data":{"sdp":"..."}}
+
+# Should appear in Terminal 2
+< {"type":"offer","from":"peer-1","to":"peer-2","data":{"sdp":"..."}}
+```
+
+## 🏗️ Phase Implementation
+
+### Phase 1 ✅ (Current)
+- [x] WebSocket server setup
+- [x] Room management
+- [x] Peer connection handling
+- [x] Message relaying (offer/answer/ice)
+- [x] Peer join/leave notifications
+- [ ] Frontend integration
+
+### Phase 2+ (Coming)
+- Chat broadcasting
+- Auth/JWT tokens
+- Redis persistence
+- Scaling support
+- TURN/STUN integration
+
+## 🔧 Building for Production
+
+```bash
+# Build binary
+go build -o main cmd/server/main.go
+
+# Run binary
+./main
+
+# Or with Docker
+docker build -f ../Dockerfile.backend -t record-meet-backend .
+docker run -p 3001:3001 record-meet-backend
+```
+
+## 📊 Statistics
+
+Room count:
+```go
+services.GetRoomCount()
+```
+
+Total peers:
+```go
+services.GetTotalPeers()
+```
+
+Get all rooms:
+```go
+services.GetAllRooms()
+```
+
+## 🐛 Troubleshooting
+
+### Port 3001 already in use
+```bash
+# Find process on port 3001
+lsof -i :3001
+
+# Kill process
+kill -9 <PID>
+```
+
+### Dependencies not found
+```bash
+go mod download
+go mod tidy
+```
+
+### WebSocket connection refused
+```bash
+# Check server is running
+curl http://localhost:3001/health
+
+# Check firewall
+# On Mac, check System Preferences → Security & Privacy
+```
+
+## 📚 Resources
+
+- **Fiber Docs**: https://docs.gofiber.io
+- **WebSocket Guide**: https://docs.gofiber.io/guide/routing#websocket
+- **Go WebSocket**: https://pkg.go.dev/github.com/gofiber/websocket/v2
+- **WebRTC**: https://webrtc.org
+
+## 📝 Notes
+
+- Room IDs are arbitrary strings (not validated)
+- Peer IDs are arbitrary strings (generated by frontend)
+- Messages are relayed as-is (server doesn't validate SDP/ICE)
+- All WebSocket connections are separate goroutines (goroutines handle concurrency)
+- RWMutex ensures thread-safe room access
+
+## 🎯 Next Steps
+
+1. ✅ Backend running and ready
+2. ⏳ Integrate with Next.js frontend
+3. ⏳ Implement WebRTC peer connection
+4. ⏳ Test with multiple clients
+5. ⏳ Add chat & other features
+
+---
+
+**Status**: Phase 1 Complete - Ready for Frontend Integration 🚀

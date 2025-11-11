@@ -1,0 +1,24 @@
+{
+  "name": "record-meet",
+  "version": "1.0.0",
+  "description": "Google Meet Clone - Video Conferencing Platform with Recording",
+  "private": true,
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "build": "bash scripts/build.sh",
+    "start": "docker-compose up",
+    "start:prod": "docker-compose -f docker-compose.yml up -d",
+    "stop": "docker-compose down",
+    "logs": "docker-compose logs -f",
+    "setup": "bash scripts/setup.sh",
+    "test": "echo 'Tests pending'"
+  },
+  "keywords": [
+    "video-conferencing",
+    "webrtc",
+    "recording",
+    "real-time"
+  ],
+  "author": "",
+  "license": "MIT"
+}
