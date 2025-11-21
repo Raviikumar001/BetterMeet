@@ -1,14 +1,13 @@
 package handlers
 
 import (
-	"encoding/json"
 	"log"
-	"sync"
+
+	"record-meet/models"
+	"record-meet/services"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/websocket/v2"
-	"record-meet/models"
-	"record-meet/services"
 )
 
 // HandleWebSocket handles WebSocket connections for signaling
@@ -28,7 +27,7 @@ func websocketHandler(conn *websocket.Conn) {
 
 	// Get or create room
 	room := services.GetOrCreateRoom(roomID)
-	
+
 	// Create peer
 	peer := &models.Peer{
 		ID:   peerID,
@@ -95,6 +94,7 @@ func handleMessage(room *models.Room, msg *models.Message) {
 	case "ice":
 		// Relay ICE candidate
 		relayMessage(room, msg)
+		log.Printf("❄️ ICE candidate relayed: %s → %s\n", msg.From, msg.To)
 
 	case "chat":
 		// Broadcast chat to all peers
@@ -117,7 +117,7 @@ func relayMessage(room *models.Room, msg *models.Message) {
 		return
 	}
 
-	if err := toPeer.Conn.WriteJSON(msg); err != nil {
+	if err := toPeer.Send(*msg); err != nil {
 		log.Printf("❌ Error relaying message to %s: %v\n", msg.To, err)
 	}
 }
@@ -129,7 +129,7 @@ func broadcastChat(room *models.Room, msg *models.Message) {
 
 	for peerID, peer := range room.Peers {
 		// Send to all peers
-		if err := peer.Conn.WriteJSON(msg); err != nil {
+		if err := peer.Send(*msg); err != nil {
 			log.Printf("❌ Error broadcasting chat to %s: %v\n", peerID, err)
 		}
 	}

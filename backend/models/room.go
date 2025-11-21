@@ -17,6 +17,14 @@ type Room struct {
 type Peer struct {
 	ID   string
 	Conn *websocket.Conn
+	Mu   sync.Mutex
+}
+
+// Send sends a message to the peer in a thread-safe manner
+func (p *Peer) Send(msg Message) error {
+	p.Mu.Lock()
+	defer p.Mu.Unlock()
+	return p.Conn.WriteJSON(msg)
 }
 
 // Message represents a signaling message
@@ -67,7 +75,7 @@ func (r *Room) BroadcastToAll(msg Message) {
 	r.Mu.RUnlock()
 
 	for _, peer := range peers {
-		_ = peer.Conn.WriteJSON(msg)
+		_ = peer.Send(msg)
 	}
 }
 
@@ -83,6 +91,6 @@ func (r *Room) BroadcastToOthers(senderID string, msg Message) {
 	r.Mu.RUnlock()
 
 	for _, peer := range peers {
-		_ = peer.Conn.WriteJSON(msg)
+		_ = peer.Send(msg)
 	}
 }
