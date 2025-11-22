@@ -1,29 +1,22 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { RTC_CONFIG, MEDIA_CONSTRAINTS } from '@/lib/rtc-config';
+import { RTC_CONFIG } from '@/lib/rtc-config';
 import { SOCKET_EVENTS } from '@/lib/socket-events';
+import { MEDIA_CONSTRAINTS } from '@/lib/media-constraints';
 
 interface WebRTCHook {
-    localStream: MediaStream | null;
     remoteStream: MediaStream | null;
     peerConnection: RTCPeerConnection | null;
-    startCall: () => Promise<void>;
     endCall: () => void;
-    toggleAudio: () => void;
-    toggleVideo: () => void;
-    isAudioEnabled: boolean;
-    isVideoEnabled: boolean;
 }
 
 export const useWebRTC = (
     roomId: string,
     peerId: string,
     socket: WebSocket | null,
-    sendMessage: (type: string, data: any, to?: string) => void
+    sendMessage: (type: string, data: any, to?: string) => void,
+    localStream: MediaStream | null
 ): WebRTCHook => {
-    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-    const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-    const [isVideoEnabled, setIsVideoEnabled] = useState(true);
     const [remotePeerId, setRemotePeerId] = useState<string | null>(null);
 
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -59,18 +52,6 @@ export const useWebRTC = (
         return pc;
     }, [sendMessage]);
 
-    // Initialize local media
-    const startCall = useCallback(async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS);
-            setLocalStream(stream);
-            return stream;
-        } catch (error) {
-            console.error('❌ Error accessing media:', error);
-            return null;
-        }
-    }, []);
-
     // Handle incoming messages
     useEffect(() => {
         if (!socket) return;
@@ -100,17 +81,11 @@ export const useWebRTC = (
                     const senderPeerId = msg.from;
                     const pc2 = createPeerConnection(senderPeerId);
 
-                    // Get local media if not already available
-                    if (!localStream) {
-                        try {
-                            const stream = await navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS);
-                            setLocalStream(stream);
-                            stream.getTracks().forEach((track) => pc2.addTrack(track, stream));
-                        } catch (err) {
-                            console.error('❌ Error getting local media for answer:', err);
-                        }
-                    } else {
+                    // Add local tracks if available
+                    if (localStream) {
                         localStream.getTracks().forEach((track) => pc2.addTrack(track, localStream));
+                    } else {
+                        console.warn('⚠️ Answering offer without local stream');
                     }
 
                     await pc2.setRemoteDescription(new RTCSessionDescription(msg.data));
@@ -131,7 +106,11 @@ export const useWebRTC = (
                 case SOCKET_EVENTS.ICE_CANDIDATE:
                     console.log('❄️ Received ICE Candidate');
                     if (peerConnectionRef.current) {
-                        await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(msg.data));
+                        try {
+                            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(msg.data));
+                        } catch (err) {
+                            console.error('❌ Error adding ICE candidate:', err);
+                        }
                     }
                     break;
 
@@ -156,37 +135,15 @@ export const useWebRTC = (
     }, [socket, createPeerConnection, sendMessage, localStream, remotePeerId]);
 
     const endCall = useCallback(() => {
-        localStream?.getTracks().forEach((track) => track.stop());
         peerConnectionRef.current?.close();
         peerConnectionRef.current = null;
-        setLocalStream(null);
         setRemoteStream(null);
         setRemotePeerId(null);
-    }, [localStream]);
-
-    const toggleAudio = useCallback(() => {
-        if (localStream) {
-            localStream.getAudioTracks().forEach((track) => (track.enabled = !track.enabled));
-            setIsAudioEnabled((prev) => !prev);
-        }
-    }, [localStream]);
-
-    const toggleVideo = useCallback(() => {
-        if (localStream) {
-            localStream.getVideoTracks().forEach((track) => (track.enabled = !track.enabled));
-            setIsVideoEnabled((prev) => !prev);
-        }
-    }, [localStream]);
+    }, []);
 
     return {
-        localStream,
         remoteStream,
         peerConnection: peerConnectionRef.current,
-        startCall,
         endCall,
-        toggleAudio,
-        toggleVideo,
-        isAudioEnabled,
-        isVideoEnabled,
     };
 };

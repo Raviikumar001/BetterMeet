@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { useWebRTC } from '@/hooks/useWebRTC';
+import { useMediaStream } from '@/hooks/useMediaStream';
 import { LocalVideo } from './LocalVideo';
 import { RemoteVideo } from './RemoteVideo';
 import { Controls } from './Controls';
@@ -16,26 +16,32 @@ interface VideoCallProps {
 export const VideoCall = ({ roomId, peerId }: VideoCallProps) => {
     const router = useRouter();
     const { socket, isConnected, sendMessage } = useWebSocket(roomId, peerId);
+
     const {
-        localStream,
-        remoteStream,
-        startCall,
-        endCall,
-        toggleAudio,
-        toggleVideo,
+        stream: localStream,
         isAudioEnabled,
         isVideoEnabled,
-    } = useWebRTC(roomId, peerId, socket, sendMessage);
+        toggleAudio,
+        toggleVideo,
+        getMediaStream,
+        stopMediaStream,
+    } = useMediaStream();
+
+    const {
+        remoteStream,
+        endCall,
+    } = useWebRTC(roomId, peerId, socket, sendMessage, localStream);
 
     const [hasJoined, setHasJoined] = useState(false);
 
     const handleJoin = async () => {
-        await startCall();
+        await getMediaStream();
         setHasJoined(true);
     };
 
     const handleLeave = () => {
         endCall();
+        stopMediaStream();
         router.push('/');
     };
 
