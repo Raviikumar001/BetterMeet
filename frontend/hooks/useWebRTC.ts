@@ -4,8 +4,8 @@ import { SOCKET_EVENTS } from '@/lib/socket-events';
 import { MEDIA_CONSTRAINTS } from '@/lib/media-constraints';
 
 interface WebRTCHook {
-    remoteStream: MediaStream | null;
-    peerConnection: RTCPeerConnection | null;
+    remoteStreams: Map<string, MediaStream>;
+    peerConnections: Map<string, RTCPeerConnection>;
     endCall: () => void;
 }
 
@@ -16,14 +16,31 @@ export const useWebRTC = (
     sendMessage: (type: string, data: any, to?: string) => void,
     localStream: MediaStream | null
 ): WebRTCHook => {
-    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-    const [remotePeerId, setRemotePeerId] = useState<string | null>(null);
+    const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+    const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
 
-    const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+    // Helper to update streams map
+    const addRemoteStream = useCallback((peerId: string, stream: MediaStream) => {
+        setRemoteStreams((prev) => {
+            const newMap = new Map(prev);
+            newMap.set(peerId, stream);
+            return newMap;
+        });
+    }, []);
+
+    const removeRemoteStream = useCallback((peerId: string) => {
+        setRemoteStreams((prev) => {
+            const newMap = new Map(prev);
+            newMap.delete(peerId);
+            return newMap;
+        });
+    }, []);
 
     // Initialize PeerConnection
     const createPeerConnection = useCallback((targetPeerId: string) => {
-        if (peerConnectionRef.current) return peerConnectionRef.current;
+        if (peerConnections.current.has(targetPeerId)) {
+            return peerConnections.current.get(targetPeerId)!;
+        }
 
         console.log('🛠️ Creating RTCPeerConnection for:', targetPeerId);
         const pc = new RTCPeerConnection(RTC_CONFIG);
@@ -38,19 +55,21 @@ export const useWebRTC = (
 
         // Handle remote stream
         pc.ontrack = (event) => {
-            console.log('🎥 Received remote track');
-            setRemoteStream(event.streams[0]);
+            console.log('🎥 Received remote track from:', targetPeerId);
+            addRemoteStream(targetPeerId, event.streams[0]);
         };
 
         // Handle ICE connection state changes
         pc.oniceconnectionstatechange = () => {
-            console.log('🧊 ICE Connection State:', pc.iceConnectionState);
+            console.log(`🧊 ICE Connection State (${targetPeerId}):`, pc.iceConnectionState);
+            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                removeRemoteStream(targetPeerId);
+            }
         };
 
-        peerConnectionRef.current = pc;
-        setRemotePeerId(targetPeerId);
+        peerConnections.current.set(targetPeerId, pc);
         return pc;
-    }, [sendMessage]);
+    }, [sendMessage, addRemoteStream, removeRemoteStream]);
 
     // Handle incoming messages
     useEffect(() => {
@@ -97,17 +116,21 @@ export const useWebRTC = (
                     break;
 
                 case SOCKET_EVENTS.ANSWER:
-                    console.log('📥 Received Answer');
-                    if (peerConnectionRef.current) {
-                        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
+                    console.log('📥 Received Answer from:', msg.from);
+                    const answerSenderId = msg.from;
+                    const pc3 = peerConnections.current.get(answerSenderId);
+                    if (pc3) {
+                        await pc3.setRemoteDescription(new RTCSessionDescription(msg.data));
                     }
                     break;
 
                 case SOCKET_EVENTS.ICE_CANDIDATE:
-                    console.log('❄️ Received ICE Candidate');
-                    if (peerConnectionRef.current) {
+                    console.log('❄️ Received ICE Candidate from:', msg.from);
+                    const candidateSenderId = msg.from;
+                    const pc4 = peerConnections.current.get(candidateSenderId);
+                    if (pc4) {
                         try {
-                            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(msg.data));
+                            await pc4.addIceCandidate(new RTCIceCandidate(msg.data));
                         } catch (err) {
                             console.error('❌ Error adding ICE candidate:', err);
                         }
@@ -116,13 +139,12 @@ export const useWebRTC = (
 
                 case SOCKET_EVENTS.USER_LEFT:
                     console.log('👋 Peer left:', msg.data);
-                    if (remotePeerId === msg.data) {
-                        setRemoteStream(null);
-                        setRemotePeerId(null);
-                        if (peerConnectionRef.current) {
-                            peerConnectionRef.current.close();
-                            peerConnectionRef.current = null;
-                        }
+                    const leftPeerId = msg.data;
+                    removeRemoteStream(leftPeerId);
+                    const pcToClose = peerConnections.current.get(leftPeerId);
+                    if (pcToClose) {
+                        pcToClose.close();
+                        peerConnections.current.delete(leftPeerId);
                     }
                     break;
             }
@@ -132,18 +154,17 @@ export const useWebRTC = (
         return () => {
             socket.removeEventListener('message', handleMessage);
         };
-    }, [socket, createPeerConnection, sendMessage, localStream, remotePeerId]);
+    }, [socket, createPeerConnection, sendMessage, localStream, removeRemoteStream]);
 
     const endCall = useCallback(() => {
-        peerConnectionRef.current?.close();
-        peerConnectionRef.current = null;
-        setRemoteStream(null);
-        setRemotePeerId(null);
+        peerConnections.current.forEach((pc) => pc.close());
+        peerConnections.current.clear();
+        setRemoteStreams(new Map());
     }, []);
 
     return {
-        remoteStream,
-        peerConnection: peerConnectionRef.current,
+        remoteStreams,
+        peerConnections: peerConnections.current,
         endCall,
     };
 };

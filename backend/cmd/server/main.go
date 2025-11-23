@@ -44,6 +44,10 @@ func main() {
 	// WebSocket endpoint for signaling
 	app.Get("/ws/:room/:peerId", handlers.HandleWebSocket)
 
+	// Room management endpoints
+	app.Post("/api/rooms", handlers.CreateRoom)
+	app.Get("/api/rooms/:id", handlers.GetRoom)
+
 	// Root endpoint
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{

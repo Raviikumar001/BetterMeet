@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWebRTC } from '@/hooks/useWebRTC';
 import { useMediaStream } from '@/hooks/useMediaStream';
-import { LocalVideo } from './LocalVideo';
-import { RemoteVideo } from './RemoteVideo';
+import { GridLayout } from './GridLayout';
 import { Controls } from './Controls';
 import { useRouter } from 'next/navigation';
 
@@ -28,7 +28,7 @@ export const VideoCall = ({ roomId, peerId }: VideoCallProps) => {
     } = useMediaStream();
 
     const {
-        remoteStream,
+        remoteStreams,
         endCall,
     } = useWebRTC(roomId, peerId, socket, sendMessage, localStream);
 
@@ -82,13 +82,13 @@ export const VideoCall = ({ roomId, peerId }: VideoCallProps) => {
             </div>
 
             {/* Video Grid */}
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 min-h-0">
-                <LocalVideo
-                    stream={localStream}
-                    isMuted={!isAudioEnabled}
-                    isVideoOff={!isVideoEnabled}
+            <div className="flex-1 min-h-0 overflow-hidden">
+                <GridLayout
+                    localStream={localStream}
+                    remoteStreams={remoteStreams}
+                    isAudioEnabled={isAudioEnabled}
+                    isVideoEnabled={isVideoEnabled}
                 />
-                <RemoteVideo stream={remoteStream} peerId="Remote" />
             </div>
 
             {/* Controls */}
